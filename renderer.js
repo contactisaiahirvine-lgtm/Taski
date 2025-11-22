@@ -85,6 +85,11 @@ function setupEventListeners() {
 
   // Click outside to close color picker and advanced settings
   document.addEventListener('click', (e) => {
+    // Don't trigger re-render if clicking on unhide zone dropdown
+    if (e.target.closest('#unhide-zone-container')) {
+      return;
+    }
+
     if (!e.target.closest('.color-picker-container') && !e.target.closest('.settings-button')) {
       editingColorZoneId = null;
       render();
