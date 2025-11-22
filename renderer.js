@@ -6,6 +6,7 @@ let draggedTask = null;
 let draggedZone = null;
 let editingColorZoneId = null;
 let editingAdvancedZoneId = null;
+let selectedTasks = new Set();
 
 const colorOptions = ['red', 'orange', 'green', 'blue', 'purple', 'gray'];
 
@@ -69,7 +70,7 @@ function setupEventListeners() {
     }
   });
 
-  // Keyboard support for modal
+  // Keyboard support for modal and task deletion
   document.addEventListener('keydown', (e) => {
     const modal = document.getElementById('modal-overlay');
     if (!modal.classList.contains('hidden')) {
@@ -79,6 +80,15 @@ function setupEventListeners() {
       } else if (e.key === 'Escape') {
         e.preventDefault();
         closeModal();
+      }
+    } else {
+      // Delete key for completing selected tasks
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTasks.size > 0) {
+        // Only if not focused on an input or contenteditable
+        if (!document.activeElement.matches('input, [contenteditable="true"]')) {
+          e.preventDefault();
+          completeSelectedTasks();
+        }
       }
     }
   });
@@ -109,13 +119,6 @@ async function handleAddTask(e) {
 
   if (!text) return;
 
-  // Find visible zones
-  const visibleZones = zones.filter(z => !z.hidden);
-  if (visibleZones.length === 0) {
-    alert('Please create or unhide at least one zone first!');
-    return;
-  }
-
   // Parse tag from text (look for -x at the end, with optional space before)
   let targetZone = null;
   const tagMatch = text.match(/\s*(-[^\s]+)\s*$/);
@@ -125,12 +128,17 @@ async function handleAddTask(e) {
     // Remove tag from text
     text = text.replace(/\s*-[^\s]+\s*$/, '').trim();
 
-    // Find zone with matching custom tag (only visible zones)
-    targetZone = visibleZones.find(z => z.customTag && z.customTag === tag);
+    // Find zone with matching custom tag (search all zones, including hidden)
+    targetZone = zones.find(z => z.customTag && z.customTag === tag);
   }
 
   // If no matching zone found, use first visible zone
   if (!targetZone) {
+    const visibleZones = zones.filter(z => !z.hidden);
+    if (visibleZones.length === 0) {
+      alert('Please create or unhide at least one zone first!');
+      return;
+    }
     targetZone = visibleZones[0];
   }
 
@@ -186,10 +194,35 @@ async function completeTask(taskId) {
     `Are you sure you want to complete this task?\n\n"${task.text}"`,
     async () => {
       tasks = tasks.filter(t => t.id !== taskId);
+      selectedTasks.delete(taskId);
       await saveTasks();
       render();
     }
   );
+}
+
+async function completeSelectedTasks() {
+  if (selectedTasks.size === 0) return;
+
+  const taskCount = selectedTasks.size;
+  showModal(
+    `Are you sure you want to complete ${taskCount} selected task${taskCount > 1 ? 's' : ''}?`,
+    async () => {
+      tasks = tasks.filter(t => !selectedTasks.has(t.id));
+      selectedTasks.clear();
+      await saveTasks();
+      render();
+    }
+  );
+}
+
+function toggleTaskSelection(taskId) {
+  if (selectedTasks.has(taskId)) {
+    selectedTasks.delete(taskId);
+  } else {
+    selectedTasks.add(taskId);
+  }
+  render();
 }
 
 async function removeZone(zoneId) {
@@ -220,26 +253,7 @@ async function toggleZoneVisibility(zoneId) {
 
   zone.hidden = !zone.hidden;
 
-  // If hiding a zone, move its tasks to the first visible zone
-  if (zone.hidden) {
-    const visibleZones = zones.filter(z => !z.hidden);
-    if (visibleZones.length > 0) {
-      const targetZone = visibleZones[0];
-      const zoneTasks = tasks.filter(t => t.zoneId === zoneId);
-
-      zoneTasks.forEach(task => {
-        task.zoneId = targetZone.id;
-        // Add to top of target zone
-        const tasksInTargetZone = tasks.filter(t => t.zoneId === targetZone.id && t.id !== task.id);
-        task.order = tasksInTargetZone.length > 0
-          ? Math.min(...tasksInTargetZone.map(t => t.order)) - 1
-          : 0;
-      });
-
-      await saveTasks();
-    }
-  }
-
+  // Tasks stay in the zone, they just get hidden with it
   await saveZones();
   render();
 }
@@ -616,13 +630,23 @@ function createZoneElement(zone) {
 }
 
 function createTaskElement(task) {
+  const isSelected = selectedTasks.has(task.id);
+
   const taskDiv = document.createElement('div');
-  taskDiv.className = 'task-card p-3 bg-white rounded-md shadow-md flex items-center justify-between cursor-grab active:cursor-grabbing transition-opacity';
+  taskDiv.className = `task-card p-3 bg-white rounded-md shadow-md flex items-center justify-between cursor-grab active:cursor-grabbing transition-opacity ${isSelected ? 'ring-2 ring-blue-500' : ''}`;
   taskDiv.draggable = true;
   taskDiv.setAttribute('data-task-id', task.id);
 
   taskDiv.addEventListener('dragstart', (e) => onTaskDragStart(e, task.id));
   taskDiv.addEventListener('dragend', onTaskDragEnd);
+
+  // Click on task card to select (but not on text or button)
+  taskDiv.addEventListener('click', (e) => {
+    // Only toggle selection if clicking on the card itself, not on editable text or button
+    if (e.target === taskDiv || e.target.classList.contains('task-card')) {
+      toggleTaskSelection(task.id);
+    }
+  });
 
   const text = document.createElement('span');
   text.className = 'flex-1 mr-2 px-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none';
@@ -631,11 +655,17 @@ function createTaskElement(task) {
   text.addEventListener('blur', (e) => {
     updateTaskText(task.id, e.target.textContent);
   });
+  text.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent selection when clicking to edit text
+  });
 
   const completeBtn = document.createElement('button');
   completeBtn.className = 'p-1 rounded-full text-green-600 hover:bg-green-100 hover:text-green-800 transition-colors';
   completeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
-  completeBtn.addEventListener('click', () => completeTask(task.id));
+  completeBtn.addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevent selection when clicking complete button
+    completeTask(task.id);
+  });
 
   taskDiv.appendChild(text);
   taskDiv.appendChild(completeBtn);
