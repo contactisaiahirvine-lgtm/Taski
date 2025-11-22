@@ -5,6 +5,8 @@ let tasks = [];
 let draggedTask = null;
 let draggedZone = null;
 let editingColorZoneId = null;
+let editingAdvancedZoneId = null;
+let selectedTasks = new Set();
 
 const colorOptions = ['red', 'orange', 'green', 'blue', 'purple', 'gray'];
 
@@ -23,12 +25,20 @@ async function loadData() {
   // Initialize default zones if none exist
   if (zones.length === 0) {
     zones = [
-      { id: generateId(), title: 'Urgent', order: 0, color: 'red' },
-      { id: generateId(), title: 'Middling', order: 1, color: 'orange' },
-      { id: generateId(), title: 'Not Urgent', order: 2, color: 'green' }
+      { id: generateId(), title: 'Urgent', order: 0, color: 'red', isDefault: true, hidden: false, customTag: '-u' },
+      { id: generateId(), title: 'Middling', order: 1, color: 'orange', isDefault: true, hidden: false, customTag: '-m' },
+      { id: generateId(), title: 'Not Urgent', order: 2, color: 'green', isDefault: true, hidden: false, customTag: '-n' }
     ];
     await saveZones();
   }
+
+  // Migrate existing zones to have new properties
+  zones = zones.map(zone => ({
+    ...zone,
+    isDefault: zone.isDefault !== undefined ? zone.isDefault : false,
+    hidden: zone.hidden !== undefined ? zone.hidden : false,
+    customTag: zone.customTag || ''
+  }));
 }
 
 // Save functions
@@ -60,10 +70,37 @@ function setupEventListeners() {
     }
   });
 
-  // Click outside to close color picker
+  // Keyboard support for modal and task deletion
+  document.addEventListener('keydown', (e) => {
+    const modal = document.getElementById('modal-overlay');
+    if (!modal.classList.contains('hidden')) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('modal-confirm').click();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeModal();
+      }
+    } else {
+      // Delete key for completing selected tasks
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTasks.size > 0) {
+        // Only if not focused on an input or contenteditable
+        if (!document.activeElement.matches('input, [contenteditable="true"]')) {
+          e.preventDefault();
+          completeSelectedTasks();
+        }
+      }
+    }
+  });
+
+  // Click outside to close color picker and advanced settings
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.color-picker-container') && !e.target.closest('.settings-button')) {
       editingColorZoneId = null;
+      render();
+    }
+    if (!e.target.closest('.advanced-settings-modal') && !e.target.closest('.advanced-settings-button')) {
+      editingAdvancedZoneId = null;
       render();
     }
   });
@@ -73,18 +110,37 @@ function setupEventListeners() {
 async function handleAddTask(e) {
   e.preventDefault();
   const input = document.getElementById('new-task-input');
-  const text = input.value.trim();
+  let text = input.value.trim();
 
   if (!text) return;
 
-  const firstZone = zones[0];
-  if (!firstZone) {
-    alert('Please create a zone first!');
+  // Find visible zones
+  const visibleZones = zones.filter(z => !z.hidden);
+  if (visibleZones.length === 0) {
+    alert('Please create or unhide at least one zone first!');
     return;
   }
 
-  // Find tasks in the first zone and add to top
-  const tasksInZone = tasks.filter(t => t.zoneId === firstZone.id);
+  // Parse tag from text
+  let targetZone = null;
+  const tagMatch = text.match(/\s(-[^\s]+)$/);
+
+  if (tagMatch) {
+    const tag = tagMatch[1];
+    // Remove tag from text
+    text = text.replace(/\s-[^\s]+$/, '').trim();
+
+    // Find zone with matching custom tag (only visible zones)
+    targetZone = visibleZones.find(z => z.customTag === tag);
+  }
+
+  // If no matching zone found, use first visible zone
+  if (!targetZone) {
+    targetZone = visibleZones[0];
+  }
+
+  // Find tasks in the target zone and add to top
+  const tasksInZone = tasks.filter(t => t.zoneId === targetZone.id);
   const newOrder = tasksInZone.length > 0
     ? Math.min(...tasksInZone.map(t => t.order)) - 1
     : 0;
@@ -92,7 +148,7 @@ async function handleAddTask(e) {
   tasks.push({
     id: generateId(),
     text: text,
-    zoneId: firstZone.id,
+    zoneId: targetZone.id,
     order: newOrder
   });
 
@@ -116,7 +172,10 @@ async function handleAddZone(e) {
     id: generateId(),
     title: title,
     order: newOrder,
-    color: 'gray'
+    color: 'gray',
+    isDefault: false,
+    hidden: false,
+    customTag: ''
   });
 
   await saveZones();
@@ -132,15 +191,46 @@ async function completeTask(taskId) {
     `Are you sure you want to complete this task?\n\n"${task.text}"`,
     async () => {
       tasks = tasks.filter(t => t.id !== taskId);
+      selectedTasks.delete(taskId);
       await saveTasks();
       render();
     }
   );
 }
 
+async function completeSelectedTasks() {
+  if (selectedTasks.size === 0) return;
+
+  const taskCount = selectedTasks.size;
+  showModal(
+    `Are you sure you want to complete ${taskCount} selected task${taskCount > 1 ? 's' : ''}?`,
+    async () => {
+      tasks = tasks.filter(t => !selectedTasks.has(t.id));
+      selectedTasks.clear();
+      await saveTasks();
+      render();
+    }
+  );
+}
+
+function toggleTaskSelection(taskId) {
+  if (selectedTasks.has(taskId)) {
+    selectedTasks.delete(taskId);
+  } else {
+    selectedTasks.add(taskId);
+  }
+  render();
+}
+
 async function removeZone(zoneId) {
   const zone = zones.find(z => z.id === zoneId);
   if (!zone) return;
+
+  // Prevent deletion of default zones
+  if (zone.isDefault) {
+    alert('Default zones cannot be deleted. You can hide them instead.');
+    return;
+  }
 
   showModal(
     `Are you sure you want to remove this zone?\n\n"${zone.title}"\n\nAll tasks within it will also be deleted.`,
@@ -152,6 +242,36 @@ async function removeZone(zoneId) {
       render();
     }
   );
+}
+
+async function toggleZoneVisibility(zoneId) {
+  const zone = zones.find(z => z.id === zoneId);
+  if (!zone) return;
+
+  zone.hidden = !zone.hidden;
+
+  // If hiding a zone, move its tasks to the first visible zone
+  if (zone.hidden) {
+    const visibleZones = zones.filter(z => !z.hidden);
+    if (visibleZones.length > 0) {
+      const targetZone = visibleZones[0];
+      const zoneTasks = tasks.filter(t => t.zoneId === zoneId);
+
+      zoneTasks.forEach(task => {
+        task.zoneId = targetZone.id;
+        // Add to top of target zone
+        const tasksInTargetZone = tasks.filter(t => t.zoneId === targetZone.id && t.id !== task.id);
+        task.order = tasksInTargetZone.length > 0
+          ? Math.min(...tasksInTargetZone.map(t => t.order)) - 1
+          : 0;
+      });
+
+      await saveTasks();
+    }
+  }
+
+  await saveZones();
+  render();
 }
 
 async function updateTaskText(taskId, newText) {
@@ -183,6 +303,24 @@ async function updateZoneColor(zoneId, newColor) {
     editingColorZoneId = null;
     render();
   }
+}
+
+async function updateZoneCustomTag(zoneId, newTag) {
+  const zone = zones.find(z => z.id === zoneId);
+  const trimmed = newTag.trim();
+
+  // Validate tag format: must start with - and have no spaces
+  if (trimmed && !trimmed.match(/^-[^\s]+$/)) {
+    alert('Custom tag must be in the format "-x" where x is any non-spaced string.');
+    return false;
+  }
+
+  if (zone) {
+    zone.customTag = trimmed;
+    await saveZones();
+    return true;
+  }
+  return false;
 }
 
 // Drag and Drop
@@ -289,10 +427,74 @@ function render() {
   const container = document.getElementById('zones-container');
   container.innerHTML = '';
 
-  zones.forEach(zone => {
+  // Only render visible zones
+  const visibleZones = zones.filter(z => !z.hidden);
+  visibleZones.forEach(zone => {
     const zoneEl = createZoneElement(zone);
     container.appendChild(zoneEl);
   });
+
+  // Render unhide zone dropdown
+  renderUnhideZoneDropdown();
+
+  // Render complete selected button
+  renderCompleteSelectedButton();
+}
+
+function renderUnhideZoneDropdown() {
+  const container = document.getElementById('unhide-zone-container');
+  const hiddenZones = zones.filter(z => z.hidden);
+
+  if (hiddenZones.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = '';
+
+  const label = document.createElement('label');
+  label.className = 'block text-sm text-gray-700 mb-1';
+  label.textContent = 'Unhide Zone:';
+  container.appendChild(label);
+
+  const select = document.createElement('select');
+  select.className = 'control-input w-full';
+  select.innerHTML = '<option value="">-- Select a zone to unhide --</option>';
+
+  hiddenZones.forEach(zone => {
+    const option = document.createElement('option');
+    option.value = zone.id;
+    option.textContent = zone.title;
+    select.appendChild(option);
+  });
+
+  select.addEventListener('change', async (e) => {
+    if (e.target.value) {
+      await toggleZoneVisibility(e.target.value);
+    }
+  });
+
+  container.appendChild(select);
+}
+
+function renderCompleteSelectedButton() {
+  const card = document.getElementById('complete-selected-card');
+  const countEl = document.getElementById('selected-count');
+  const btn = document.getElementById('complete-selected-btn');
+
+  if (selectedTasks.size === 0) {
+    card.classList.add('hidden');
+    return;
+  }
+
+  card.classList.remove('hidden');
+  countEl.textContent = selectedTasks.size;
+
+  // Remove old listener and add new one
+  const newBtn = btn.cloneNode(true);
+  btn.parentNode.replaceChild(newBtn, btn);
+
+  document.getElementById('complete-selected-btn').addEventListener('click', completeSelectedTasks);
 }
 
 function createZoneElement(zone) {
@@ -324,41 +526,106 @@ function createZoneElement(zone) {
   const controls = document.createElement('div');
   controls.className = 'relative flex items-center space-x-2 color-picker-container';
 
+  // Hide/Show button
+  const hideBtn = document.createElement('button');
+  hideBtn.className = 'p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800 transition-colors';
+  hideBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>`;
+  hideBtn.title = 'Hide zone';
+  hideBtn.addEventListener('click', () => toggleZoneVisibility(zone.id));
+
   // Settings button
   const settingsBtn = document.createElement('button');
   settingsBtn.className = 'p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800 transition-colors settings-button';
-  settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`;
+  settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="2" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v1m0 6v1m3.5-6.5l-.7.7m-5.6 5.6l-.7.7m7-1.4l-.7-.7m-5.6-5.6l-.7-.7"/></svg>`;
+  settingsBtn.title = 'Settings';
   settingsBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     editingColorZoneId = editingColorZoneId === zone.id ? null : zone.id;
     render();
   });
 
-  // Remove button
+  // Remove button (cleaner icon)
   const removeBtn = document.createElement('button');
   removeBtn.className = 'p-1 rounded-full text-gray-500 hover:bg-red-100 hover:text-red-700 transition-colors';
-  removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
+  removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 6l12 12m0-12L6 18"/></svg>`;
+  removeBtn.title = zone.isDefault ? 'Cannot delete default zone' : 'Delete zone';
   removeBtn.addEventListener('click', () => removeZone(zone.id));
 
+  controls.appendChild(hideBtn);
   controls.appendChild(settingsBtn);
   controls.appendChild(removeBtn);
 
-  // Color picker
+  // Color picker and Advanced Settings
   if (editingColorZoneId === zone.id) {
     const picker = document.createElement('div');
-    picker.className = 'absolute top-full right-0 z-10 mt-2 p-2 bg-white shadow-xl rounded-md border border-gray-200 flex space-x-2';
+    picker.className = 'absolute top-full right-0 z-10 mt-2 p-3 bg-white shadow-xl rounded-md border border-gray-200 flex flex-col gap-3';
 
+    // Color options
+    const colorRow = document.createElement('div');
+    colorRow.className = 'flex space-x-2';
     colorOptions.forEach(color => {
       const colorBtn = document.createElement('button');
-      colorBtn.className = `w-6 h-6 rounded-full border border-gray-300 bg-${color}-500 transform hover:scale-110 transition-transform`;
+      colorBtn.className = `w-6 h-6 rounded-full border-2 ${zone.color === color ? 'border-gray-800' : 'border-gray-300'} bg-${color}-500 transform hover:scale-110 transition-transform`;
       colorBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         updateZoneColor(zone.id, color);
       });
-      picker.appendChild(colorBtn);
+      colorRow.appendChild(colorBtn);
     });
+    picker.appendChild(colorRow);
+
+    // Advanced Settings button
+    const advancedBtn = document.createElement('button');
+    advancedBtn.className = 'text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 px-2 py-1 rounded advanced-settings-button';
+    advancedBtn.textContent = 'Advanced Settings';
+    advancedBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editingAdvancedZoneId = editingAdvancedZoneId === zone.id ? null : zone.id;
+      editingColorZoneId = null;
+      render();
+    });
+    picker.appendChild(advancedBtn);
 
     controls.appendChild(picker);
+  }
+
+  // Advanced Settings Modal
+  if (editingAdvancedZoneId === zone.id) {
+    const advancedModal = document.createElement('div');
+    advancedModal.className = 'absolute top-full right-0 z-10 mt-2 p-4 bg-white shadow-xl rounded-md border border-gray-200 w-64 advanced-settings-modal';
+
+    const modalTitle = document.createElement('h4');
+    modalTitle.className = 'font-semibold mb-3 text-gray-800';
+    modalTitle.textContent = 'Advanced Settings';
+    advancedModal.appendChild(modalTitle);
+
+    // Custom Tag Input
+    const tagLabel = document.createElement('label');
+    tagLabel.className = 'block text-sm text-gray-700 mb-1';
+    tagLabel.textContent = 'Custom Tag (format: -x):';
+    advancedModal.appendChild(tagLabel);
+
+    const tagInput = document.createElement('input');
+    tagInput.type = 'text';
+    tagInput.className = 'w-full px-2 py-1 border border-gray-300 rounded text-sm mb-2';
+    tagInput.value = zone.customTag || '';
+    tagInput.placeholder = '-example';
+    advancedModal.appendChild(tagInput);
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'w-full btn btn-primary text-sm py-1';
+    saveBtn.textContent = 'Save';
+    saveBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const success = await updateZoneCustomTag(zone.id, tagInput.value);
+      if (success) {
+        editingAdvancedZoneId = null;
+        render();
+      }
+    });
+    advancedModal.appendChild(saveBtn);
+
+    controls.appendChild(advancedModal);
   }
 
   header.appendChild(title);
@@ -389,13 +656,25 @@ function createZoneElement(zone) {
 }
 
 function createTaskElement(task) {
+  const isSelected = selectedTasks.has(task.id);
+
   const taskDiv = document.createElement('div');
-  taskDiv.className = 'task-card p-3 bg-white rounded-md shadow-md flex items-center justify-between cursor-grab active:cursor-grabbing transition-opacity';
+  taskDiv.className = `task-card p-3 bg-white rounded-md shadow-md flex items-center justify-between cursor-grab active:cursor-grabbing transition-opacity ${isSelected ? 'ring-2 ring-blue-500' : ''}`;
   taskDiv.draggable = true;
   taskDiv.setAttribute('data-task-id', task.id);
 
   taskDiv.addEventListener('dragstart', (e) => onTaskDragStart(e, task.id));
   taskDiv.addEventListener('dragend', onTaskDragEnd);
+
+  // Checkbox for selection
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'mr-2 w-4 h-4 cursor-pointer';
+  checkbox.checked = isSelected;
+  checkbox.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleTaskSelection(task.id);
+  });
 
   const text = document.createElement('span');
   text.className = 'flex-1 mr-2 px-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none';
@@ -410,6 +689,7 @@ function createTaskElement(task) {
   completeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
   completeBtn.addEventListener('click', () => completeTask(task.id));
 
+  taskDiv.appendChild(checkbox);
   taskDiv.appendChild(text);
   taskDiv.appendChild(completeBtn);
 

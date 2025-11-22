@@ -29,7 +29,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
               </svg>
-              <span>Add to Urgent</span>
+              <span>Add Task</span>
             </button>
           </form>
         </div>
@@ -52,6 +52,20 @@
               <span>Add Zone</span>
             </button>
           </form>
+          <div id="unhide-zone-container" class="mt-2">
+            <!-- Unhide zone dropdown will be rendered here -->
+          </div>
+        </div>
+
+        <!-- Complete Selected Tasks Card (shown when tasks are selected) -->
+        <div id="complete-selected-card" class="control-card hidden">
+          <h2 class="control-title">Selected Tasks: <span id="selected-count">0</span></h2>
+          <button id="complete-selected-btn" class="btn btn-danger">
+            <svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <span>Complete Selected</span>
+          </button>
         </div>
       </div>
 
