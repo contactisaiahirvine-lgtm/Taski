@@ -22,7 +22,7 @@ function createWindow() {
   // Window dimensions - tall and narrow for side panel
   const windowWidth = 400;
   const windowHeight = height - 100; // Leave some margin
-  const xPosition = width - windowWidth - 20; // 20px from right edge
+  const xPosition = 20; // 20px from left edge
   const yPosition = 50; // 50px from top
 
   mainWindow = new BrowserWindow({
