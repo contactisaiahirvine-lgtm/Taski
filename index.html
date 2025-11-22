@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Taski - Task Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Main content area -->
+    <main class="main-content">
+
+      <!-- Controls Section -->
+      <div class="controls-section">
+        <!-- Add Task Card -->
+        <div class="control-card">
+          <h2 class="control-title">Add Task</h2>
+          <form id="add-task-form" class="control-form">
+            <input
+              id="new-task-input"
+              type="text"
+              placeholder="New task description..."
+              class="control-input"
+              required
+            />
+            <button type="submit" class="btn btn-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Add to Urgent</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- Add Zone Card -->
+        <div class="control-card">
+          <h2 class="control-title">Add Zone</h2>
+          <form id="add-zone-form" class="control-form">
+            <input
+              id="new-zone-input"
+              type="text"
+              placeholder="New zone title..."
+              class="control-input"
+              required
+            />
+            <button type="submit" class="btn btn-success">
+              <svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Add Zone</span>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Zones Container -->
+      <div id="zones-container" class="zones-container">
+        <!-- Zones will be dynamically rendered here -->
+      </div>
+    </main>
+
+    <!-- Confirmation Modal -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div class="modal-content">
+        <h3 class="modal-title">Confirm Action</h3>
+        <p id="modal-message" class="modal-message"></p>
+        <div class="modal-actions">
+          <button id="modal-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="modal-confirm" class="btn btn-danger">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
