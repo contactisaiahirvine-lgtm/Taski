@@ -6,7 +6,6 @@ let draggedTask = null;
 let draggedZone = null;
 let editingColorZoneId = null;
 let editingAdvancedZoneId = null;
-let selectedTasks = new Set();
 
 const colorOptions = ['red', 'orange', 'green', 'blue', 'purple', 'gray'];
 
@@ -70,7 +69,7 @@ function setupEventListeners() {
     }
   });
 
-  // Keyboard support for modal and task deletion
+  // Keyboard support for modal
   document.addEventListener('keydown', (e) => {
     const modal = document.getElementById('modal-overlay');
     if (!modal.classList.contains('hidden')) {
@@ -80,15 +79,6 @@ function setupEventListeners() {
       } else if (e.key === 'Escape') {
         e.preventDefault();
         closeModal();
-      }
-    } else {
-      // Delete key for completing selected tasks
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTasks.size > 0) {
-        // Only if not focused on an input or contenteditable
-        if (!document.activeElement.matches('input, [contenteditable="true"]')) {
-          e.preventDefault();
-          completeSelectedTasks();
-        }
       }
     }
   });
@@ -121,17 +111,17 @@ async function handleAddTask(e) {
     return;
   }
 
-  // Parse tag from text
+  // Parse tag from text (look for -x at the end, with optional space before)
   let targetZone = null;
-  const tagMatch = text.match(/\s(-[^\s]+)$/);
+  const tagMatch = text.match(/\s*(-[^\s]+)\s*$/);
 
   if (tagMatch) {
     const tag = tagMatch[1];
     // Remove tag from text
-    text = text.replace(/\s-[^\s]+$/, '').trim();
+    text = text.replace(/\s*-[^\s]+\s*$/, '').trim();
 
     // Find zone with matching custom tag (only visible zones)
-    targetZone = visibleZones.find(z => z.customTag === tag);
+    targetZone = visibleZones.find(z => z.customTag && z.customTag === tag);
   }
 
   // If no matching zone found, use first visible zone
@@ -191,35 +181,10 @@ async function completeTask(taskId) {
     `Are you sure you want to complete this task?\n\n"${task.text}"`,
     async () => {
       tasks = tasks.filter(t => t.id !== taskId);
-      selectedTasks.delete(taskId);
       await saveTasks();
       render();
     }
   );
-}
-
-async function completeSelectedTasks() {
-  if (selectedTasks.size === 0) return;
-
-  const taskCount = selectedTasks.size;
-  showModal(
-    `Are you sure you want to complete ${taskCount} selected task${taskCount > 1 ? 's' : ''}?`,
-    async () => {
-      tasks = tasks.filter(t => !selectedTasks.has(t.id));
-      selectedTasks.clear();
-      await saveTasks();
-      render();
-    }
-  );
-}
-
-function toggleTaskSelection(taskId) {
-  if (selectedTasks.has(taskId)) {
-    selectedTasks.delete(taskId);
-  } else {
-    selectedTasks.add(taskId);
-  }
-  render();
 }
 
 async function removeZone(zoneId) {
@@ -436,13 +401,12 @@ function render() {
 
   // Render unhide zone dropdown
   renderUnhideZoneDropdown();
-
-  // Render complete selected button
-  renderCompleteSelectedButton();
 }
 
 function renderUnhideZoneDropdown() {
   const container = document.getElementById('unhide-zone-container');
+  if (!container) return;
+
   const hiddenZones = zones.filter(z => z.hidden);
 
   if (hiddenZones.length === 0) {
@@ -459,7 +423,11 @@ function renderUnhideZoneDropdown() {
 
   const select = document.createElement('select');
   select.className = 'control-input w-full';
-  select.innerHTML = '<option value="">-- Select a zone to unhide --</option>';
+
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = '-- Select a zone to unhide --';
+  select.appendChild(defaultOption);
 
   hiddenZones.forEach(zone => {
     const option = document.createElement('option');
@@ -471,30 +439,11 @@ function renderUnhideZoneDropdown() {
   select.addEventListener('change', async (e) => {
     if (e.target.value) {
       await toggleZoneVisibility(e.target.value);
+      e.target.value = ''; // Reset selection
     }
   });
 
   container.appendChild(select);
-}
-
-function renderCompleteSelectedButton() {
-  const card = document.getElementById('complete-selected-card');
-  const countEl = document.getElementById('selected-count');
-  const btn = document.getElementById('complete-selected-btn');
-
-  if (selectedTasks.size === 0) {
-    card.classList.add('hidden');
-    return;
-  }
-
-  card.classList.remove('hidden');
-  countEl.textContent = selectedTasks.size;
-
-  // Remove old listener and add new one
-  const newBtn = btn.cloneNode(true);
-  btn.parentNode.replaceChild(newBtn, btn);
-
-  document.getElementById('complete-selected-btn').addEventListener('click', completeSelectedTasks);
 }
 
 function createZoneElement(zone) {
@@ -517,10 +466,14 @@ function createZoneElement(zone) {
 
   const title = document.createElement('span');
   title.className = 'zone-title font-semibold text-lg flex-1 mr-2 px-1 rounded hover:bg-gray-200 focus:bg-gray-200 focus:outline-none';
+  title.style.userSelect = 'text';
   title.contentEditable = true;
   title.textContent = zone.title;
   title.addEventListener('blur', (e) => {
     updateZoneTitle(zone.id, e.target.textContent);
+  });
+  title.addEventListener('click', (e) => {
+    e.stopPropagation();
   });
 
   const controls = document.createElement('div');
@@ -536,7 +489,7 @@ function createZoneElement(zone) {
   // Settings button
   const settingsBtn = document.createElement('button');
   settingsBtn.className = 'p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800 transition-colors settings-button';
-  settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="2" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v1m0 6v1m3.5-6.5l-.7.7m-5.6 5.6l-.7.7m7-1.4l-.7-.7m-5.6-5.6l-.7-.7"/></svg>`;
+  settingsBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`;
   settingsBtn.title = 'Settings';
   settingsBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -544,10 +497,10 @@ function createZoneElement(zone) {
     render();
   });
 
-  // Remove button (cleaner icon)
+  // Remove button
   const removeBtn = document.createElement('button');
   removeBtn.className = 'p-1 rounded-full text-gray-500 hover:bg-red-100 hover:text-red-700 transition-colors';
-  removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 6l12 12m0-12L6 18"/></svg>`;
+  removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
   removeBtn.title = zone.isDefault ? 'Cannot delete default zone' : 'Delete zone';
   removeBtn.addEventListener('click', () => removeZone(zone.id));
 
@@ -558,7 +511,8 @@ function createZoneElement(zone) {
   // Color picker and Advanced Settings
   if (editingColorZoneId === zone.id) {
     const picker = document.createElement('div');
-    picker.className = 'absolute top-full right-0 z-10 mt-2 p-3 bg-white shadow-xl rounded-md border border-gray-200 flex flex-col gap-3';
+    picker.className = 'absolute top-full right-0 mt-2 p-3 bg-white shadow-xl rounded-md border border-gray-200 flex flex-col gap-3';
+    picker.style.zIndex = '1000';
 
     // Color options
     const colorRow = document.createElement('div');
@@ -592,7 +546,8 @@ function createZoneElement(zone) {
   // Advanced Settings Modal
   if (editingAdvancedZoneId === zone.id) {
     const advancedModal = document.createElement('div');
-    advancedModal.className = 'absolute top-full right-0 z-10 mt-2 p-4 bg-white shadow-xl rounded-md border border-gray-200 w-64 advanced-settings-modal';
+    advancedModal.className = 'absolute top-full right-0 mt-2 p-4 bg-white shadow-xl rounded-md border border-gray-200 w-64 advanced-settings-modal';
+    advancedModal.style.zIndex = '1000';
 
     const modalTitle = document.createElement('h4');
     modalTitle.className = 'font-semibold mb-3 text-gray-800';
@@ -656,25 +611,13 @@ function createZoneElement(zone) {
 }
 
 function createTaskElement(task) {
-  const isSelected = selectedTasks.has(task.id);
-
   const taskDiv = document.createElement('div');
-  taskDiv.className = `task-card p-3 bg-white rounded-md shadow-md flex items-center justify-between cursor-grab active:cursor-grabbing transition-opacity ${isSelected ? 'ring-2 ring-blue-500' : ''}`;
+  taskDiv.className = 'task-card p-3 bg-white rounded-md shadow-md flex items-center justify-between cursor-grab active:cursor-grabbing transition-opacity';
   taskDiv.draggable = true;
   taskDiv.setAttribute('data-task-id', task.id);
 
   taskDiv.addEventListener('dragstart', (e) => onTaskDragStart(e, task.id));
   taskDiv.addEventListener('dragend', onTaskDragEnd);
-
-  // Checkbox for selection
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.className = 'mr-2 w-4 h-4 cursor-pointer';
-  checkbox.checked = isSelected;
-  checkbox.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleTaskSelection(task.id);
-  });
 
   const text = document.createElement('span');
   text.className = 'flex-1 mr-2 px-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none';
@@ -689,7 +632,6 @@ function createTaskElement(task) {
   completeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
   completeBtn.addEventListener('click', () => completeTask(task.id));
 
-  taskDiv.appendChild(checkbox);
   taskDiv.appendChild(text);
   taskDiv.appendChild(completeBtn);
 
