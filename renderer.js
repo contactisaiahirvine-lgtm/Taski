@@ -39,11 +39,16 @@ async function loadData() {
 
     return {
       ...zone,
-      isDefault: zone.isDefault !== undefined ? zone.isDefault : isDefaultZone,
+      // If this is a default zone by title, FORCE isDefault to true (override any old value)
+      isDefault: isDefaultZone ? true : (zone.isDefault || false),
       hidden: zone.hidden !== undefined ? zone.hidden : false,
       customTag: zone.customTag || (zone.title === 'Urgent' ? '-u' : zone.title === 'Middling' ? '-m' : zone.title === 'Not Urgent' ? '-n' : '')
     };
   });
+
+  // Log the zones for debugging
+  console.log('Zones after migration:', zones.map(z => ({ title: z.title, isDefault: z.isDefault, customTag: z.customTag })));
+
   await saveZones();
 }
 
@@ -263,8 +268,12 @@ async function removeZone(zoneId) {
   const zone = zones.find(z => z.id === zoneId);
   if (!zone) return;
 
-  // Prevent deletion of default zones
-  if (zone.isDefault === true) {
+  // Prevent deletion of default zones - check both flag AND title as backup
+  const isDefaultZone = zone.isDefault === true || ['Urgent', 'Middling', 'Not Urgent'].includes(zone.title);
+
+  console.log(`Attempting to remove zone "${zone.title}". isDefault=${zone.isDefault}, isDefaultZone=${isDefaultZone}`);
+
+  if (isDefaultZone) {
     alert('Default zones (Urgent, Middling, Not Urgent) cannot be deleted. You can hide them instead.');
     return;
   }
@@ -272,9 +281,12 @@ async function removeZone(zoneId) {
   showModal(
     `Are you sure you want to remove this zone?\n\n"${zone.title}"\n\nAll tasks within it will also be deleted.`,
     async () => {
-      // Double-check before deleting
-      if (zone.isDefault === true) {
+      // Triple-check before deleting - check both flag AND title
+      const stillDefaultZone = zone.isDefault === true || ['Urgent', 'Middling', 'Not Urgent'].includes(zone.title);
+
+      if (stillDefaultZone) {
         alert('Cannot delete default zones!');
+        console.error('Attempted to delete default zone in modal callback!');
         return;
       }
 
@@ -313,6 +325,13 @@ async function updateZoneTitle(zoneId, newTitle) {
   const trimmed = newTitle.trim();
 
   if (zone && trimmed && zone.title !== trimmed) {
+    // Prevent renaming default zones
+    if (zone.isDefault === true) {
+      alert('Cannot rename default zones (Urgent, Middling, Not Urgent).');
+      render(); // Re-render to reset the title
+      return;
+    }
+
     zone.title = trimmed;
     await saveZones();
   }
@@ -524,16 +543,25 @@ function createZoneElement(zone) {
   header.addEventListener('drop', (e) => onZoneDropReorder(e, zone.id));
 
   const title = document.createElement('span');
-  title.className = 'zone-title font-semibold text-lg flex-1 mr-2 px-1 rounded hover:bg-gray-200 focus:bg-gray-200 focus:outline-none';
-  title.style.userSelect = 'text';
-  title.contentEditable = true;
+  const isDefaultZone = zone.isDefault === true || ['Urgent', 'Middling', 'Not Urgent'].includes(zone.title);
+
+  // Make default zones' titles non-editable
+  if (isDefaultZone) {
+    title.className = 'zone-title font-semibold text-lg flex-1 mr-2 px-1';
+    title.contentEditable = false;
+  } else {
+    title.className = 'zone-title font-semibold text-lg flex-1 mr-2 px-1 rounded hover:bg-gray-200 focus:bg-gray-200 focus:outline-none';
+    title.style.userSelect = 'text';
+    title.contentEditable = true;
+    title.addEventListener('blur', (e) => {
+      updateZoneTitle(zone.id, e.target.textContent);
+    });
+    title.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  }
+
   title.textContent = zone.title;
-  title.addEventListener('blur', (e) => {
-    updateZoneTitle(zone.id, e.target.textContent);
-  });
-  title.addEventListener('click', (e) => {
-    e.stopPropagation();
-  });
 
   const controls = document.createElement('div');
   controls.className = 'relative flex items-center space-x-2 color-picker-container';
@@ -556,17 +584,19 @@ function createZoneElement(zone) {
     render();
   });
 
-  // Remove button
+  // Remove button - check both flag AND title
   const removeBtn = document.createElement('button');
-  if (zone.isDefault) {
+  const isDefaultZone = zone.isDefault === true || ['Urgent', 'Middling', 'Not Urgent'].includes(zone.title);
+
+  if (isDefaultZone) {
     removeBtn.className = 'p-1 rounded-full text-gray-400 cursor-not-allowed transition-colors';
     removeBtn.disabled = true;
   } else {
     removeBtn.className = 'p-1 rounded-full text-gray-500 hover:bg-red-100 hover:text-red-700 transition-colors';
   }
   removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
-  removeBtn.title = zone.isDefault ? 'Cannot delete default zones' : 'Delete zone';
-  if (!zone.isDefault) {
+  removeBtn.title = isDefaultZone ? 'Cannot delete default zones' : 'Delete zone';
+  if (!isDefaultZone) {
     removeBtn.addEventListener('click', () => removeZone(zone.id));
   }
 
