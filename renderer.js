@@ -284,8 +284,11 @@ async function completeSelectedTasks() {
 
 function toggleTaskSelection(taskId) {
   if (selectedTasks.has(taskId)) {
+    // Clicking on already selected task - deselect it
     selectedTasks.delete(taskId);
   } else {
+    // Clicking on a different task - clear all and select only this one
+    selectedTasks.clear();
     selectedTasks.add(taskId);
   }
   render();
@@ -758,8 +761,13 @@ function createTaskElement(task) {
     }
   });
 
+  // Text wrapper to take up remaining space
+  const textWrapper = document.createElement('div');
+  textWrapper.className = 'flex-1 min-w-0';
+
   const text = document.createElement('span');
-  text.className = 'flex-1 mr-2 px-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none';
+  text.className = 'px-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none';
+  text.style.display = 'inline-block';
   text.contentEditable = true;
   text.textContent = task.text;
   text.addEventListener('blur', (e) => {
@@ -768,16 +776,24 @@ function createTaskElement(task) {
   text.addEventListener('click', (e) => {
     e.stopPropagation(); // Prevent selection when clicking to edit text
   });
+  text.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent newline
+      e.target.blur(); // Exit editing mode
+    }
+  });
+
+  textWrapper.appendChild(text);
 
   const completeBtn = document.createElement('button');
-  completeBtn.className = 'p-1 rounded-full text-green-600 hover:bg-green-100 hover:text-green-800 transition-colors';
+  completeBtn.className = 'p-1 rounded-full text-green-600 hover:bg-green-100 hover:text-green-800 transition-colors ml-2 flex-shrink-0';
   completeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
   completeBtn.addEventListener('click', (e) => {
     e.stopPropagation(); // Prevent selection when clicking complete button
     completeTask(task.id);
   });
 
-  taskDiv.appendChild(text);
+  taskDiv.appendChild(textWrapper);
   taskDiv.appendChild(completeBtn);
 
   return taskDiv;
