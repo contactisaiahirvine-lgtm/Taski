@@ -44,8 +44,8 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // Uncomment to open DevTools for debugging
-  // mainWindow.webContents.openDevTools();
+  // Open DevTools for debugging
+  mainWindow.webContents.openDevTools();
 
   // Quit the app when the window is closed
   mainWindow.on('close', () => {

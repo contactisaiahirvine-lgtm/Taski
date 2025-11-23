@@ -19,37 +19,55 @@ async function init() {
 
 // Load data from electron-store
 async function loadData() {
-  zones = await window.electronAPI.store.get('zones') || [];
-  tasks = await window.electronAPI.store.get('tasks') || [];
+  try {
+    zones = await window.electronAPI.store.get('zones') || [];
+    tasks = await window.electronAPI.store.get('tasks') || [];
 
-  // Initialize default zones if none exist
-  if (zones.length === 0) {
+    console.log('Loaded zones from storage:', zones.length);
+
+    // Initialize default zones if none exist
+    if (zones.length === 0) {
+      console.log('No zones found, creating defaults...');
+      zones = [
+        { id: generateId(), title: 'Urgent', order: 0, color: 'red', isDefault: true, hidden: false, customTag: '-u' },
+        { id: generateId(), title: 'Middling', order: 1, color: 'orange', isDefault: true, hidden: false, customTag: '-m' },
+        { id: generateId(), title: 'Not Urgent', order: 2, color: 'green', isDefault: true, hidden: false, customTag: '-n' }
+      ];
+      console.log('Created default zones:', zones.length);
+      await saveZones();
+      console.log('Saved default zones');
+    } else {
+      // Migrate existing zones to have new properties
+      console.log('Migrating existing zones...');
+      zones = zones.map(zone => {
+        // Check if this is one of the default zones by title
+        const isDefaultZone = ['Urgent', 'Middling', 'Not Urgent'].includes(zone.title);
+
+        return {
+          ...zone,
+          // If this is a default zone by title, FORCE isDefault to true (override any old value)
+          isDefault: isDefaultZone ? true : (zone.isDefault || false),
+          hidden: zone.hidden !== undefined ? zone.hidden : false,
+          customTag: zone.customTag || (zone.title === 'Urgent' ? '-u' : zone.title === 'Middling' ? '-m' : zone.title === 'Not Urgent' ? '-n' : '')
+        };
+      });
+
+      // Log the zones for debugging
+      console.log('Zones after migration:', zones.map(z => ({ title: z.title, isDefault: z.isDefault, hidden: z.hidden, customTag: z.customTag })));
+
+      await saveZones();
+      console.log('Saved migrated zones');
+    }
+  } catch (error) {
+    console.error('Error loading data:', error);
+    // Fallback to default zones if there's an error
     zones = [
       { id: generateId(), title: 'Urgent', order: 0, color: 'red', isDefault: true, hidden: false, customTag: '-u' },
       { id: generateId(), title: 'Middling', order: 1, color: 'orange', isDefault: true, hidden: false, customTag: '-m' },
       { id: generateId(), title: 'Not Urgent', order: 2, color: 'green', isDefault: true, hidden: false, customTag: '-n' }
     ];
-    await saveZones();
+    tasks = [];
   }
-
-  // Migrate existing zones to have new properties
-  zones = zones.map(zone => {
-    // Check if this is one of the default zones by title
-    const isDefaultZone = ['Urgent', 'Middling', 'Not Urgent'].includes(zone.title);
-
-    return {
-      ...zone,
-      // If this is a default zone by title, FORCE isDefault to true (override any old value)
-      isDefault: isDefaultZone ? true : (zone.isDefault || false),
-      hidden: zone.hidden !== undefined ? zone.hidden : false,
-      customTag: zone.customTag || (zone.title === 'Urgent' ? '-u' : zone.title === 'Middling' ? '-m' : zone.title === 'Not Urgent' ? '-n' : '')
-    };
-  });
-
-  // Log the zones for debugging
-  console.log('Zones after migration:', zones.map(z => ({ title: z.title, isDefault: z.isDefault, customTag: z.customTag })));
-
-  await saveZones();
 }
 
 // Save functions
@@ -82,7 +100,7 @@ function setupEventListeners() {
   });
 
   // Keyboard support for modal and task deletion
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', async (e) => {
     const modal = document.getElementById('modal-overlay');
     if (!modal.classList.contains('hidden')) {
       if (e.key === 'Enter') {
@@ -93,8 +111,17 @@ function setupEventListeners() {
         closeModal();
       }
     } else {
+      // Ctrl+Shift+R to reset data (clear store and reload)
+      if (e.ctrlKey && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        console.log('Resetting data store...');
+        await window.electronAPI.store.delete('zones');
+        await window.electronAPI.store.delete('tasks');
+        console.log('Store cleared. Reloading...');
+        location.reload();
+      }
       // Delete key for completing selected tasks
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTasks.size > 0) {
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTasks.size > 0) {
         // Only if not focused on an input or contenteditable
         if (!document.activeElement.matches('input, [contenteditable="true"]')) {
           e.preventDefault();
@@ -461,6 +488,10 @@ function closeModal() {
 
 // Render
 function render() {
+  console.log('=== RENDER CALLED ===');
+  console.log('Total zones:', zones.length);
+  console.log('Zones state:', zones.map(z => ({ title: z.title, hidden: z.hidden, isDefault: z.isDefault })));
+
   // Sort zones by order
   zones.sort((a, b) => a.order - b.order);
 
@@ -472,6 +503,9 @@ function render() {
 
   // Only render visible zones
   const visibleZones = zones.filter(z => !z.hidden);
+  console.log('Visible zones:', visibleZones.length);
+  console.log('Hidden zones:', zones.filter(z => z.hidden).map(z => z.title));
+
   visibleZones.forEach(zone => {
     const zoneEl = createZoneElement(zone);
     container.appendChild(zoneEl);
