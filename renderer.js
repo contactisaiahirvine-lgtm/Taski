@@ -129,7 +129,16 @@ async function handleAddTask(e) {
     text = text.replace(/\s*-[^\s]+\s*$/, '').trim();
 
     // Find zone with matching custom tag (search all zones, including hidden)
-    targetZone = zones.find(z => z.customTag && z.customTag === tag);
+    // Check for zones that have a customTag set and it matches
+    targetZone = zones.find(z => {
+      const zoneTag = z.customTag?.trim();
+      return zoneTag && zoneTag.length > 0 && zoneTag === tag;
+    });
+
+    // Debug: log if tag was found
+    if (!targetZone) {
+      console.log(`No zone found for tag "${tag}". Available tags:`, zones.map(z => ({ title: z.title, tag: z.customTag })));
+    }
   }
 
   // If no matching zone found, use first visible zone
@@ -193,8 +202,32 @@ async function completeTask(taskId) {
   showModal(
     `Are you sure you want to complete this task?\n\n"${task.text}"`,
     async () => {
+      const wasSelected = selectedTasks.has(taskId);
+
+      // Find the next task in the same zone before deleting (only if this task was selected)
+      let nextTask = null;
+      if (wasSelected) {
+        const zoneTasksList = tasks.filter(t => t.zoneId === task.zoneId).sort((a, b) => a.order - b.order);
+        const currentIndex = zoneTasksList.findIndex(t => t.id === taskId);
+
+        if (currentIndex >= 0 && currentIndex < zoneTasksList.length - 1) {
+          // Select next task in the zone
+          nextTask = zoneTasksList[currentIndex + 1];
+        } else if (currentIndex > 0) {
+          // If it's the last task, select the previous one
+          nextTask = zoneTasksList[currentIndex - 1];
+        }
+      }
+
+      // Remove the task and update selection
       tasks = tasks.filter(t => t.id !== taskId);
       selectedTasks.delete(taskId);
+
+      // Transfer selection to next task if the completed task was selected
+      if (nextTask) {
+        selectedTasks.add(nextTask.id);
+      }
+
       await saveTasks();
       render();
     }
@@ -230,14 +263,20 @@ async function removeZone(zoneId) {
   if (!zone) return;
 
   // Prevent deletion of default zones
-  if (zone.isDefault) {
-    alert('Default zones cannot be deleted. You can hide them instead.');
+  if (zone.isDefault === true) {
+    alert('Default zones (Urgent, Middling, Not Urgent) cannot be deleted. You can hide them instead.');
     return;
   }
 
   showModal(
     `Are you sure you want to remove this zone?\n\n"${zone.title}"\n\nAll tasks within it will also be deleted.`,
     async () => {
+      // Double-check before deleting
+      if (zone.isDefault === true) {
+        alert('Cannot delete default zones!');
+        return;
+      }
+
       tasks = tasks.filter(t => t.zoneId !== zoneId);
       zones = zones.filter(z => z.id !== zoneId);
       await saveTasks();
@@ -518,10 +557,17 @@ function createZoneElement(zone) {
 
   // Remove button
   const removeBtn = document.createElement('button');
-  removeBtn.className = 'p-1 rounded-full text-gray-500 hover:bg-red-100 hover:text-red-700 transition-colors';
+  if (zone.isDefault) {
+    removeBtn.className = 'p-1 rounded-full text-gray-400 cursor-not-allowed transition-colors';
+    removeBtn.disabled = true;
+  } else {
+    removeBtn.className = 'p-1 rounded-full text-gray-500 hover:bg-red-100 hover:text-red-700 transition-colors';
+  }
   removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
-  removeBtn.title = zone.isDefault ? 'Cannot delete default zone' : 'Delete zone';
-  removeBtn.addEventListener('click', () => removeZone(zone.id));
+  removeBtn.title = zone.isDefault ? 'Cannot delete default zones' : 'Delete zone';
+  if (!zone.isDefault) {
+    removeBtn.addEventListener('click', () => removeZone(zone.id));
+  }
 
   controls.appendChild(hideBtn);
   controls.appendChild(settingsBtn);
