@@ -34,16 +34,13 @@
       "renderer.js"
     ],
     "win": {
-      "target": ["nsis"],
-      "icon": "icon.png"
+      "target": ["nsis"]
     },
     "mac": {
-      "target": ["dmg"],
-      "icon": "icon.png"
+      "target": ["dmg"]
     },
     "linux": {
-      "target": ["AppImage"],
-      "icon": "icon.png"
+      "target": ["AppImage"]
     }
   }
 }
