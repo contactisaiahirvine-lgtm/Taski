@@ -618,9 +618,8 @@ function createZoneElement(zone) {
     render();
   });
 
-  // Remove button - check both flag AND title
+  // Remove button - reuse isDefaultZone check from above
   const removeBtn = document.createElement('button');
-  const isDefaultZone = zone.isDefault === true || ['Urgent', 'Middling', 'Not Urgent'].includes(zone.title);
 
   if (isDefaultZone) {
     removeBtn.className = 'p-1 rounded-full text-gray-400 cursor-not-allowed transition-colors';
