@@ -274,8 +274,42 @@ async function completeSelectedTasks() {
   showModal(
     `Are you sure you want to complete ${taskCount} selected task${taskCount > 1 ? 's' : ''}?`,
     async () => {
+      // Find the next task in visual order before deleting
+      let nextTask = null;
+
+      // Get all visible zones sorted by order
+      const visibleZones = zones.filter(z => !z.hidden).sort((a, b) => a.order - b.order);
+
+      // Build a flat list of all tasks in visual order
+      const allTasksInOrder = [];
+      visibleZones.forEach(zone => {
+        const zoneTasks = tasks.filter(t => t.zoneId === zone.id).sort((a, b) => a.order - b.order);
+        allTasksInOrder.push(...zoneTasks);
+      });
+
+      // Find the selected task (assuming single selection)
+      const selectedTaskId = Array.from(selectedTasks)[0];
+      const currentIndex = allTasksInOrder.findIndex(t => t.id === selectedTaskId);
+
+      if (currentIndex >= 0) {
+        // Try to get the next task
+        if (currentIndex < allTasksInOrder.length - 1) {
+          nextTask = allTasksInOrder[currentIndex + 1];
+        } else if (currentIndex > 0) {
+          // If it's the last task, select the previous one
+          nextTask = allTasksInOrder[currentIndex - 1];
+        }
+      }
+
+      // Delete the selected tasks
       tasks = tasks.filter(t => !selectedTasks.has(t.id));
       selectedTasks.clear();
+
+      // Select the next task if one was found
+      if (nextTask) {
+        selectedTasks.add(nextTask.id);
+      }
+
       await saveTasks();
       render();
     }
