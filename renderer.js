@@ -753,17 +753,17 @@ function createTaskElement(task) {
   taskDiv.addEventListener('dragstart', (e) => onTaskDragStart(e, task.id));
   taskDiv.addEventListener('dragend', onTaskDragEnd);
 
-  // Click on task card to select (but not on text or button)
-  taskDiv.addEventListener('click', (e) => {
-    // Only toggle selection if clicking on the card itself, not on editable text or button
-    if (e.target === taskDiv || e.target.classList.contains('task-card')) {
-      toggleTaskSelection(task.id);
-    }
-  });
-
   // Text wrapper to take up remaining space
   const textWrapper = document.createElement('div');
   textWrapper.className = 'flex-1 min-w-0';
+
+  // Click on task card to select (but not on text or button)
+  taskDiv.addEventListener('click', (e) => {
+    // Only toggle selection if clicking on the card itself, textWrapper, or empty areas
+    if (e.target === taskDiv || e.target === textWrapper || e.target.classList.contains('task-card')) {
+      toggleTaskSelection(task.id);
+    }
+  });
 
   const text = document.createElement('span');
   text.className = 'px-1 rounded hover:bg-gray-100 focus:bg-gray-100 focus:outline-none';
