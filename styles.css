@@ -325,8 +325,8 @@ body {
 
 .ring-blue-500 {
   --tw-ring-color: #3b82f6;
-  box-shadow: 0 0 0 3px var(--tw-ring-color);
-  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px var(--tw-ring-color) !important;
+  border: 2px solid #3b82f6 !important;
 }
 
 .border-2 {

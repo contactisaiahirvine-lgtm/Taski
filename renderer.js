@@ -33,12 +33,18 @@ async function loadData() {
   }
 
   // Migrate existing zones to have new properties
-  zones = zones.map(zone => ({
-    ...zone,
-    isDefault: zone.isDefault !== undefined ? zone.isDefault : false,
-    hidden: zone.hidden !== undefined ? zone.hidden : false,
-    customTag: zone.customTag || ''
-  }));
+  zones = zones.map(zone => {
+    // Check if this is one of the default zones by title
+    const isDefaultZone = ['Urgent', 'Middling', 'Not Urgent'].includes(zone.title);
+
+    return {
+      ...zone,
+      isDefault: zone.isDefault !== undefined ? zone.isDefault : isDefaultZone,
+      hidden: zone.hidden !== undefined ? zone.hidden : false,
+      customTag: zone.customTag || (zone.title === 'Urgent' ? '-u' : zone.title === 'Middling' ? '-m' : zone.title === 'Not Urgent' ? '-n' : '')
+    };
+  });
+  await saveZones();
 }
 
 // Save functions
@@ -134,11 +140,6 @@ async function handleAddTask(e) {
       const zoneTag = z.customTag?.trim();
       return zoneTag && zoneTag.length > 0 && zoneTag === tag;
     });
-
-    // Debug: log if tag was found
-    if (!targetZone) {
-      console.log(`No zone found for tag "${tag}". Available tags:`, zones.map(z => ({ title: z.title, tag: z.customTag })));
-    }
   }
 
   // If no matching zone found, use first visible zone

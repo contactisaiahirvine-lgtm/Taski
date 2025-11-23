@@ -47,6 +47,11 @@ function createWindow() {
   // Uncomment to open DevTools for debugging
   // mainWindow.webContents.openDevTools();
 
+  // Quit the app when the window is closed
+  mainWindow.on('close', () => {
+    app.quit();
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
